@@ -1,13 +1,16 @@
-# 精馏 模拟 面向方程demo
+# 精馏 模拟 面向方程demo 模拟模型
 # 两组分模型
 # 相平衡使用Wilson 方程计算活度系数
 # 使用Antoine 和 Wilson方程共同构成对温度的约束
-# 本模型为模拟模型
-# 目标为 每一块塔板上的气液相差为0
+# 本模型为优化demo
+# 在限定 xD >= 0.95 时, 优化 最小回流比
+
 using Ipopt
 using JuMP
 using MathOptInterface
 const MOI = MathOptInterface
+using DataFrames
+# x初值
 x_ss = [0.97287970129754
    0.95636038934316
    0.93661040294083
@@ -40,6 +43,7 @@ x_ss = [0.97287970129754
    0.05944779752760
    0.04124685281752
    0.02712029870246]
+# T 初值
 T_ss = 100 * [3.54170894061095
     3.54384309151657
     3.54642323740009
@@ -80,11 +84,11 @@ P = 101325 # 塔压，本案例未考虑压降
 Feed =  24.0 / 60.0 # 进料量
 x_Feed = 0.5 # 进料组成， 平衡态进料
 D = 0.5 * Feed # 塔顶采出量
-rr = 2.49 # 回流比
+# rr = 3 # 回流比
 
-L = rr * D     # 精馏液相流量
-V = L + D      # 精馏气相流量
-FL = Feed + L  # 提馏段液相流量
+# L = rr * D  # 精馏液相流量
+# V = L + D # 精馏气相流量
+# FL = Feed + L # 提馏段液相流量
 
 # antoine系数
 DIPPR = [   5.1087E1 8.7829E1;
@@ -94,15 +98,20 @@ DIPPR = [   5.1087E1 8.7829E1;
             6.0000E0 2.0000E0];
 
 # Wilson系数
-L12 = 1.618147731;  # 组分1对组分2
-L21 = 0.50253532;   # 组分2对组分1
+L12 = 1.618147731; # 组分1对组分2
+L21 = 0.50253532; # 组分2 对组分1
 
-nfeed = 17  # 进料板
+nfeed = 17 # 进料板
 
 # 创建模型
-m = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 600,  "tol" => 1e-6, "print_level" => 5,  "output_file" => "ipopt.out", "file_print_level" => 6))
+m = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 600,  "tol" => 1e-6, "print_level" => 5))
+# 变量个数 nh * 7 + 4 = 228
+# rr 回流比, L 液相流量, V 气相流量, FL 提馏段液相流量
+@variable(m, 3 >= rr >= 0)
+@variable(m, L)
+@variable(m, V)
+@variable(m, FL)
 
-# 变量个数 nh * 7  = 224
 @variable(m, 0 <= x[i in 1:nh] <= 1)  # 组分A的液相浓度
 @variable(m, 0 <= y[i in 1:nh] <= 1)  # 组分A的气相浓度
 @variable(m, T[i in 1:nh])            # 温度
@@ -111,9 +120,11 @@ m = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 600,  "tol" =
 @variable(m, PsatA[i in 1:nh])        # 组分A的饱和蒸汽压
 @variable(m, PsatB[i in 1:nh])        # 组分B的饱和蒸汽压
 
-# 方程数 nh* 4  = 192
-# 其中目标函数包含 32 个 eqdt == 0
-# 192 + 32 = 224
+# 方程数 nh* 7 + 3 = 227
+
+@NLconstraint(m, defL, L == rr * D)
+@NLconstraint(m, defV, V == L + D)
+@NLconstraint(m, defFl, FL == Feed + L)
 
 # 使用Wilson 方程计算活度系数, A表示组分A, 及x和y对应的组分
 @NLconstraint(m, defgammaA[i in 1:nh], gammaA[i] == exp(-log(x[i] + L12 * (1 - x[i])) + (1 - x[i]) * (L12 / (x[i] + L12 * (1 - x[i])) - (L21 / (L21 * x[i] + (1 - x[i]))))))
@@ -123,7 +134,7 @@ m = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 600,  "tol" =
 @NLconstraint(m, defPstaA[i in 1:nh], PsatA[i] == exp(DIPPR[1,1] + DIPPR[2,1] / T[i] + DIPPR[3,1] * log(T[i]) + DIPPR[4,1] * (T[i]^DIPPR[5,1])))
 @NLconstraint(m, defPstaB[i in 1:nh], PsatB[i] == exp(DIPPR[1,2] + DIPPR[2,2] / T[i] + DIPPR[3,2] * log(T[i]) + DIPPR[4,2] * (T[i]^DIPPR[5,2])))
 
-# 根据液相活度和Ps, 计算组分分压 x -> y
+# 根据活度和Ps, 计算组分分压 x -> y
 @NLconstraint(m, defy[i in 1:nh],  y[i] == x[i] * gammaA[i] * (PsatA[i] / P))
 
 # 组分A的质量平衡, D冷凝器, dist精馏段, feed进料, strip提馏段, W 再沸器
@@ -133,15 +144,30 @@ m = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 600,  "tol" =
 @NLconstraint(m, mass_eq_strip[i in nfeed + 1:nh - 1], FL * (x[i - 1] - x[i]) == V * (y[i] - y[i + 1]))
 @NLconstraint(m, mass_eq_W, FL * x[nh - 1] - (Feed - D) * x[nh] - V * y[nh] == 0)
 
-# Pa + Pb == P
-@NLexpression(m, eqdt[i in 1:nh], ((x[i] * gammaA[i] * PsatA[i]) + ((1 - x[i]) * gammaB[i] * PsatB[i]) - P) / P)
 
-# 目标 min sum(dp)
-@NLobjective(m, Min, sum(eqdt[i]^2 for i in 1:nh))
+# Pa + Pb == P
+@NLexpression(m, eqdt[i in 1:nh], (x[i] * gammaA[i] * PsatA[i] + (1 - x[i]) * gammaB[i] * PsatB[i] - P) / P)
+@NLconstraint(m, defeq[i in 1:nh], eqdt[i] == 0)
+
+# 给定最低产品质量
+@NLconstraint(m, x[1] >= 0.95)
+
+# 优化最低回流比
+@NLobjective(m, Min,  rr)
 
 # 设置初值
 set_start_value.(x, x_ss)
 set_start_value.(T, T_ss)
-
+set_start_value(rr, 2)
+set_start_value(L, start_value(rr) * D)
+set_start_value(V, start_value(L) + D)
+set_start_value(FL, start_value(L) + Feed)
+for i in 1:nh
+    set_start_value(gammaA[i], exp(-log(x_ss[i] + L12 * (1 - x_ss[i])) + (1 - x_ss[i]) * (L12 / (x_ss[i] + L12 * (1 - x_ss[i])) - (L21 / (L21 * x_ss[i] + (1 - x_ss[i]))))))
+    set_start_value(gammaB[i], exp(-log((1 - x_ss[i]) + L21 * x_ss[i]) + x_ss[i] * (L21 / ((1 - x_ss[i]) + L21 * x_ss[i]) - (L12 / (L12 * (1 - x_ss[i]) + x_ss[i])))))
+    set_start_value(PsatA[i], exp(DIPPR[1,1] + DIPPR[2,1] / T_ss[i] + DIPPR[3,1] * log(T_ss[i]) + DIPPR[4,1] * (T_ss[i]^DIPPR[5,1])))
+    set_start_value(PsatB[i], exp(DIPPR[1,2] + DIPPR[2,2] / T_ss[i] + DIPPR[3,2] * log(T_ss[i]) + DIPPR[4,2] * (T_ss[i]^DIPPR[5,2])))
+end
 optimize!(m)
+
 print(DataFrame([JuMP.value.(x),JuMP.value.(y), JuMP.value.(T)], [:x,:y,:T]))
