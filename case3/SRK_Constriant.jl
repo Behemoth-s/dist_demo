@@ -18,25 +18,25 @@ const ac = ac_factor * R^2 .* Tc.^2 ./ Pc
 @variable(model, ar[1:nc])
 @variable(model, aij[i in 1:nc, j in i:nc])
 
-@variable(model, amiL[1:nc])
+@variable(model, atmpL[1:nc])
 @variable(model, amL)
 @variable(model, bmL)
 @variable(model, ϕL[i in 1:nc])
 
 
-@NLconstraint(model, def_ar[i in 1:nc], ar[i] == sqrt(ac[i]) * (1 + m[i] * (1 - Temp / Tc[i])))
+@NLconstraint(model, def_ar[i in 1:nc], ar[i] == sqrt(ac[i]) * (1 + m[i] * (1 - sqrt(Temp / Tc[i]))))
 @NLconstraint(model, def_aij[i in 1:nc, j in i:nc], aij[i, j] == (1 - k[i,j]) * ar[i] * ar[j])
-@NLconstraint(model, def_amL, amL == sum(x[i]^2 * aij[i,i] for i in 1:nc) + 2 * sum(x[i]^2 * aij[i,j] for i in 1:nc, j in i + 1:nc))
-@NLconstraint(model, def_amiL[i in 1:nc], amiL[i] / x[i] == sum(aij[j, i] for j in 1:i - 1) + sum(aij[i, j] for j in i:nc))
+@NLconstraint(model, def_amL, amL == sum(x[i]^2 * aij[i,i] for i in 1:nc) + 2 * sum(x[i] * x[j] * aij[i,j] for i in 1:nc, j in i + 1:nc))
+@NLconstraint(model, def_atmp[i in 1:nc], atmp[i] == sum((1 - k[i, j]) * (x[i] .* ar[i]) for j in 1:nc))
+# @NLconstraint(model, def_amiL[i in 1:nc], amiL[i] / x[i] == sum(aij[j, i] for j in 1:i - 1) + sum(aij[i, j] for j in i:nc))
 @NLconstraint(model, def_bmL, bmL == sum(x[i] * bi[i] for i in 1:nc))
 
 @NLconstraint(model, def_AL, AL == amL * P / R^2 / Temp^2)
-@NLconstraint(model, def_BL, BL == bmL * P / R^2 / Temp^2)
+@NLconstraint(model, def_BL, BL == bmL * P / R / Temp)
 
+@NLconstraint(model, def_phiL[i in 1:nc], ϕL == (ZL - 1) * bi[i] / bmL - log(ZL - BL) - AL / BL * (2 * ar[i] / am * atmp[i] - bi[i] / bm) * log(1 + BL / ZL))
 
-
-
-@NLconstraint(model, def_phiL[i in 1:nc], ϕL[i] == (ZL - 1) * bi[i] / bmL - log(ZL - BL) - AL / BL * (2 * amiL[i] / amL  - bi[i] / bmL) * log(1 + BL / ZL))
+# @NLconstraint(model, def_phiL[i in 1:nc], ϕL[i] == (ZL - 1) * bi[i] / bmL - log(ZL - BL) - AL / BL * (2 * amiL[i] / amL  - bi[i] / bmL) * log(1 + BL / ZL))
 
 @NLconstraint(model, def_ZL1, ZL^3 - (1 - BL) * ZL^2 + (AL - 3BL^2 - 2BL) * ZL - (AL * BL - BL^2 - BL^3) == 0)
 @NLconstraint(model, def_ZL2, 3 * ZL^2 - 2 * (1 - BL) * ZL + (AL - 3BL^2 - 2BL) >= 0)
@@ -46,21 +46,22 @@ const ac = ac_factor * R^2 .* Tc.^2 ./ Pc
 @variable(model, BV)
 @variable(model, ZV)
 
-@variable(model, amiV[1:nc])
+@variable(model, atmpV[1:nc])
 @variable(model, amV)
 @variable(model, bmV)
 @variable(model, ϕV[i in 1:nc])
 
 
 
-@NLconstraint(model, def_AV, AV == amV * P / R^2 / Temp^2)
-@NLconstraint(model, def_BV, BV == bmV * P / R^2 / Temp^2)
+
 
 # @NLconstraint(model, def_arV[i in 1:nc], arV[i] == sqrt(ac[i]) * (1 + m[i] * (1 - Temp / Tc[i])))
 # @NLconstraint(model, def_aij[i in 1:nc, j in i:nc], aij[i, j] == (1 - k[i,j]) * ar[i] * ar[j])
 @NLconstraint(model, def_amV, amV == sum(y[i]^2 * aij[i,i] for i in 1:nc) + 2 * sum(y[i]^2 * aij[i,j] for i in 1:nc, j in i + 1:nc))
 @NLconstraint(model, def_amiV[i in 1:nc], amiV[i] / y[i] == sum(aij[j, i] for j in 1:i - 1) + sum(aij[i, j] for j in i:nc))
 @NLconstraint(model, def_bmV, bmV == sum(y[i] * bi[i] for i in 1:nc))
+@NLconstraint(model, def_AV, AV == amV * P / R^2 / Temp^2)
+@NLconstraint(model, def_BV, BV == bmV * P / R^2 / Temp^2)
 
 @NLconstraint(model, def_phiV[i in 1:nc], ϕV[i] == (ZV - 1) * bi[i] / bmV - log(ZV - BV) - AV / BV * (2 * amiV[i] / amV  - bi[i] / bmV) * log(1 + BV / ZV))
 
