@@ -1,8 +1,68 @@
+function initlize_bubleT(x0, pres)
+
+    temp0 = initialize_temp(pres, VAP_PRE)
+    keq0 = initialize_K(pres, temp0, PRES_CRITICAL, TEMP_CRITICAL, ω)
+    y0 = x0 .* keq0
+    y0 = y0 ./ sum(y0)
+
+
+
+    ar0 = sqrt.(AC_VAL) .* (1 .+ MI_VAL .* (1 .- sqrt.(temp0 ./ TEMP_CRITICAL)))
+    aij0 = (1 .- K) .* (ar0 * ar0')
+    amL0 = sum(x0[i] * x0[j] * aij0[i,j] for i in 1:NC, j in 1:NC)
+    bmL0 = sum(x0[i] * BI_VAL[i] for i in 1:NC)
+    AL0 = amL0 * pres / R_VAL^2 / temp0^2
+    BL0 = bmL0 * pres / R_VAL / temp0
+    ZL0 = solve_cube_Z(AL0, BL0, "L")
+    atmpL0 = (1 .- K) * (x0 .* ar0);
+    lnϕL0 = (ZL0 - 1) .* BI_VAL / bmL0 .- log(ZL0 - BL0) .- AL0 ./ BL0 .* (2 .* ar0 ./ amL0 .* atmpL0 .- BI_VAL ./ bmL0) .* log(1 + BL0 / ZL0);
+
+    amV0 = sum(y0[i] * y0[j] * aij0[i,j] for i in 1:NC, j in 1:NC)
+    bmV0 = sum(y0[i] * BI_VAL[i] for i in 1:NC)
+    AV0 = amV0 * pres / R_VAL^2 / temp0^2
+    BV0 = bmV0 * pres / R_VAL / temp0
+    ZV0 = solve_cube_Z(AV0, BV0, "V")
+    atmpV0 = (1 .- K) * (y0 .* ar0);
+    lnϕV0 = (ZV0 - 1) .* BI_VAL / bmV0 .- log(ZV0 - BV0) .- AV0 ./ BV0 .* (2 .* ar0 ./ amV0 .* atmpV0 .- BI_VAL ./ bmV0) .* log(1 + BV0 / ZV0);
+
+    fix.(x, x0)
+    set_start_value.(y, y0)
+    # set_start_value.(keq, keq0)
+    set_start_value(Temp, temp0)
+    set_start_value(AL, AL0)
+    set_start_value(BL, BL0)
+    set_start_value(ZL, ZL0)
+    set_start_value(AV, AV0)
+    set_start_value(BV, BV0)
+    set_start_value(ZV, ZV0)
+
+    set_start_value.(ar, ar0)
+    for i in 1:NC, j in i:NC
+        set_start_value(aij[i, j], aij0[i,j])
+    end
+    set_start_value(amL, amL0)
+    set_start_value(amV, amV0)
+
+    set_start_value.(atmpL, atmpL0)
+    set_start_value.(atmpV, atmpV0)
+
+    set_start_value(bmL, bmL0)
+    set_start_value(bmV, bmV0)
+    set_start_value.(ϕL, exp.(lnϕL0))
+    set_start_value.(ϕV, exp.(lnϕV0))
+    set_lower_bound(ZL, 0)
+    set_lower_bound(ZV, 0)
+    set_start_value(sL, 0)
+    set_start_value(sV, 0)
+    set_start_value(β, 1)
+    set_lower_bound.(y, 0)
+end
 function saturationT!(F, temp, pres, Vp)
     F .= Vp[:, 1] + Vp[:, 2] ./ (temp + Vp[:, 3]) + Vp[:, 4] .* log.(temp) + Vp[:, 5] .* temp.^Vp[:, 6] .- log(pres / 1000);
 end
 
 function initialize_temp(pres, Vp)
+    nc  = size(Vp)[1]
     f!(F, temp) = saturationT!(F, temp, pres, Vp)
     sat_temp0 = ones(nc) .* 200
     F0 = zeros(nc)
@@ -10,18 +70,16 @@ function initialize_temp(pres, Vp)
     temp0 = r.zero' * x0
 end
 
-function initialize_K(pres, Temp, pc, tc, ω)
-    K0 = pc ./ pres .* exp.(5.373 .* (1 .+ ω) .* (1 .- tc ./ Temp))
+function initialize_K(pres, temp, pc, tc, ω)
+    K0 = pc ./ pres .* exp.(5.373 .* (1 .+ ω) .* (1 .- tc ./ temp))
 end
 
+
 function forward_ϕL(x, pres, temp, phase, pc, tc, ω, k)
-    R = 8.314e3
-    m_factor = [0.480 1.574 0.176] # [0.48508, 1.55171, -0.15613]
-    ac_factor = 0.42748
-    b_factor = 0.08664
-    m = m_factor[1] .+ m_factor[2] .* ω .- m_factor[3] .* ω.^2
-    bi  = b_factor * R .* tc ./ pc
-    ac = ac_factor * R^2 .* tc.^2 ./ pc
+
+    m = M_FACTOR[1] .+ M_FACTOR[2] .* ω .- M_FACTOR[3] .* ω.^2
+    bi  = B_FACTOR * R .* tc ./ pc
+    ac = AC_FACTOR * R^2 .* tc.^2 ./ pc
     ar = sqrt.(ac) .* (1 .+ m .* (1 .- sqrt.(temp ./ tc)))
     aij = (1 .- k) .* (ar * ar')
     am = sum(x[i] * x[j] * aij[i,j] for i in 1:nc, j in 1:nc)
