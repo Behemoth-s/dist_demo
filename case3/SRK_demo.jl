@@ -10,17 +10,14 @@ fdir = @__DIR__
 
 prop = CSV.read(joinpath(fdir, "prop.csv"), DataFrame)
 df_k = CSV.read(joinpath(fdir, "kij.csv"), DataFrame)
-const VAP_PRE = Matrix(CSV.read(joinpath(fdir, "VapPre.csv"), DataFrame)[:,2:7])
-const K = Matrix(df_k[2:end])       # 二元交互参数系数
-const PRES_CRITICAL = prop.Pc .+ 101325       # 临界压力
-const TEMP_CRITICAL = prop.Tc       # 临界温度
+Vap_data = Matrix(CSV.read(joinpath(fdir, "VapPre.csv"), DataFrame)[:,2:7])
+k_data = Matrix(df_k[2:37])       # 二元交互参数系数
+Pc_data = prop.Pc .+ 101325       # 临界压力
+Tc_data = prop.Tc       # 临界温度
 # 偏心因子
-const ω = prop.omega
-const NC = length(PRES_CRITICAL)
+ω_data = prop.omega
 
-const PRES = 420000
-
-x0 = [0
+z_input = [0
 0
 0
 4.78999999089900e-08
@@ -57,20 +54,45 @@ x0 = [0
 0.0256488599512672
 0
 0]
+const NC_SET = (1:length(z_input))[z_input .!= 0]
+const NC = length(NC_SET)
 
-model = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 6000,  "tol" => 1e-6, "print_level" => 4))
+const VAP_PRE = Vap_data[NC_SET,:]
+const K = k_data[NC_SET,NC_SET]       # 二元交互参数系数
+const PRES_CRITICAL = Pc_data[NC_SET]       # 临界压力
+const TEMP_CRITICAL = Tc_data[NC_SET]       # 临界温度
+# 偏心因子
+const ω = ω_data[NC_SET]
+const PRES = 420000
+TOTAL_FLOW = 1;
+const M_COFF = 10
+const ρ = 1
+
+const PROBLEM_TYPE = "PT_FLASH"
+
+# L0 = 0.937
+
+
+model = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 6000,  "tol" => 1e-6, "print_level" => 3))
 include("SRK_Constriant.jl")
 include("initialize.jl")
-initlize_bubleT(x0, PRES)
+initialize(PROBLEM_TYPE;z0=z_input[NC_SET],F0=TOTAL_FLOW,pres0=PRES,temp0=430)
+# initlize_bubleT(x0, PRES)
 # ϕL0 =  (ZL0 - 1) .* bi ./ bmL0 .- log(ZL0 - BL0) .- AL0 ./ BL0 .* (2 .* amiL0 ./ amL0  .- bi ./ bmL0) .* log(1 + BL0 / ZL0)
 # model
 # @NLconstraint(model, def_y_con[i in 1:NC], y[i] == keq[i] * x[i])
 
 # @NLobjective(model, Min, sum((y[i]  - keq[i] * x[i] )^2 for i in 1:NC))
-@NLobjective(model, Min, 100 * (sum(y[i] for i in 1:NC) - 1)^2)
+# initialize(problem_type;z0,F0,x0,pres0,temp0)
+# @NLobjective(model, Min, 100 * (sum(y[i] for i in 1:NC) - 1)^2)
 # @NLconstraint(model, sumy, sum(y[i] for i in 1:NC) - 1 == 0)
 # @NLobjective(model, Min, Temp)
 
+# optimize!(model)
+# println(value(Temp))
+# println(sum(value.(y)))
 optimize!(model)
-println(value(Temp))
-println(sum(value.(y)))
+println.(value(L))
+println.(value(V))
+# println(value.(ŷ + lnϕV - x̂ - lnϕL))
+# value.([L * x[i] + V * y[i] - TOTAL_FLOW * z_input[NC_SET][i] for i in 1:NC])
