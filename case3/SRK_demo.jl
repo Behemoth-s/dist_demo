@@ -64,18 +64,25 @@ const TEMP_CRITICAL = Tc_data[NC_SET]       # 临界温度
 # 偏心因子
 const ω = ω_data[NC_SET]
 const PRES = 420000
-TOTAL_FLOW = 1;
+TOTAL_FLOW = 10;
 const M_COFF = 10
-const ρ = 1
+const ρ = 500000
 
 const PROBLEM_TYPE = "PT_FLASH"
-
+const LN_EXPRESSION_A = false
+const LN_EXPRESSION_PHI = true
+const LC_EXPRESSION_FLAG = false
+const COMPLEMENTS_FLAG = true
+const USER_FUNCTION_FLAG = true
+const K_MEAN_FLAG = true
+const ϵx = log(10e-16)
 # L0 = 0.937
 
 
-model = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => 6000,  "tol" => 1e-6, "print_level" => 3))
+model = Model(optimizer_with_attributes(Ipopt.Optimizer))
 include("SRK_Constriant.jl")
 include("initialize.jl")
+
 initialize(PROBLEM_TYPE;z0=z_input[NC_SET],F0=TOTAL_FLOW,pres0=PRES,temp0=430)
 # initlize_bubleT(x0, PRES)
 # ϕL0 =  (ZL0 - 1) .* bi ./ bmL0 .- log(ZL0 - BL0) .- AL0 ./ BL0 .* (2 .* amiL0 ./ amL0  .- bi ./ bmL0) .* log(1 + BL0 / ZL0)
