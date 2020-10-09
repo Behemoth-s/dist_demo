@@ -21,7 +21,6 @@ if USER_FUNCTION_FLAG
     register(model, :cube_eos_B, 3, SRK_EOS_B, ∇SRK_EOS_B)
     register(model, :cube_eos_I1, 3, SRK_EOS_I1, ∇SRK_EOS_I1)
     register(model, :cube_eos_I3, 3, SRK_EOS_I3, ∇SRK_EOS_I3)
-
     include("FLASH_EO.jl")
     register(model, :comp_flow_eq, 6, comp_flow_eq, ∇comp_flow_eq)
     register(model, :Δ, 5, Δ, ∇Δ)
@@ -31,12 +30,6 @@ end
 
 @variable(model, x[1:NC])
 @variable(model, y[1:NC])
-
-
-
-@variable(model, L >= 0)
-@variable(model, V >= 0)
-
 
 @variable(model, IL1)
 @variable(model, IV1)
@@ -67,8 +60,7 @@ end
 
 
 
-@variable(model,sL >= 0)
-@variable(model,sV >= 0)
+
 @variable(model, β)
 
 @NLconstraint(model, def_ar[i in 1:NC], ar[i] == sqrt(AC_VAL[i]) * (1 + MI_VAL[i] * (1 - sqrt(Temp / TEMP_CRITICAL[i]))))
@@ -120,6 +112,8 @@ else
     @NLconstraint(model, def_IL3, exp(IL3) == ( ZL + BL ) / ZL)
     @NLconstraint(model, def_IV3, exp(IV3) == ( ZV + BV ) / ZV)
 end
+
+
 if LN_EXPRESSION_PHI
     @variable(model, lnϕV[1:NC])
     @variable(model, lnϕL[1:NC])
@@ -135,16 +129,14 @@ if LN_EXPRESSION_PHI
     @NLconstraint(model, def_lnx[i in 1:NC], x[i] == exp(x̂[i]))
     @NLconstraint(model, def_lny[i in 1:NC], y[i] == exp(ŷ[i]))
     @NLconstraint(model, phase_eq[i in 1:NC], ŷ[i] + lnϕV[i] == β + lnϕL[i] + x̂[i])
-    @constraint(model, lower_limit_β, β  >= -sL)
-    @constraint(model, upper_limit_β, β  <= sV)
+
 else
     @variable(model, ϕV[1:NC])
     @variable(model, ϕL[1:NC])
     @NLconstraint(model, def_phiL[i in 1:NC], log(ϕL[i]) == ((ZL - 1) * BI_VAL[i] / bmL - IL1 - AL / BL * (δL[i]  - bi_val[i] / bmL) * IL3))
     @NLconstraint(model, def_phiV[i in 1:NC], log(ϕV[i]) == ((ZV - 1) * BI_VAL[i] / bmV - IV1 - AV / BV * (δV[i]  - bi_val[i] / bmV) * IV3))
     @NLconstraint(model, phase_eq[i in 1:NC], y[i] == β * ϕL[i] / ϕV[i] * x[i] )
-    @constraint(model, lower_limit_β, β - 1  >= -sL)
-    @constraint(model, upper_limit_β, β - 1  <= sV)
+
 end
 # 确定三次方程根
 if USER_FUNCTION_FLAG
@@ -161,49 +153,93 @@ else
 end
 
 
-@constraint(model, def_ZL3, 6 * ZL - 2   <= M_COFF * sL)
-@constraint(model, def_ZV3, 6 * ZV - 2   >= -M_COFF * sV)
 
 
-
-
-@constraint(model, sumy, sum(y[i] - x[i] for i in 1:NC) == 0 )
-
-
-
-if COMPLEMENTS_FLAG
-    @complements(model, 0 <= V, sV >= 0) # V*sV==0
-    @complements(model, 0 <= L, sL >= 0) # L*sL==0
-else
-    @constraint(model, V * sV == 0)
-    @constraint(model, L * sL == 0)
-end
-
-if LC_EXPRESSION_FLAG
-    @variable(model, lc[1:NC])
-    @variable(model, vc[1:NC])
-    @variable(model, mc[1:NC])
-    @constraint(model, lv_eq[i in 1:NC], mc[i] == lc[i] + vc[i])
-
-    @constraint(model, def_l[i in 1:NC], lc[i] == L * x[i])
-    @constraint(model, def_v[i in 1:NC], vc[i] == V * y[i])
-
-    @constraint(model, sum_l, L == sum(lc[i] for i in 1:NC))
-    @constraint(model, sum_v, V == sum(vc[i] for i in 1:NC))
-else
-    @variable(model, z[1:NC])
-    @variable(model, F)
-    @constraint(model, eq_flow, F == L + V)
-    if USER_FUNCTION_FLAG
-        @constraint(model, eq_cmp[i in 1:NC], comp_flow_eq(L, x[i], V, y[i], F, z[i]) == 0)
+if PROBLEM_TYPE == "PT_FLASH"
+    @variable(model, L >= 0)
+    @variable(model, V >= 0)
+    @variable(model,sL >= 0)
+    @variable(model,sV >= 0)
+    if LN_EXPRESSION_PHI
+        @constraint(model, lower_limit_β, β  >= -sL)
+        @constraint(model, upper_limit_β, β  <= sV)
     else
-        @constraint(model, eq_cmp[i in 1:NC], F * z[i] == L * x[i] + V * y[i])
+        @constraint(model, lower_limit_β, β - 1  >= -sL)
+        @constraint(model, upper_limit_β, β - 1  <= sV)
+    end
+    if COMPLEMENTS_FLAG
+        @complements(model, 0 <= V, sV >= 0) # V*sV==0
+        @complements(model, 0 <= L, sL >= 0) # L*sL==0
+    else
+        @constraint(model, V * sV == 0)
+        @constraint(model, L * sL == 0)
+    end
+
+    if LC_EXPRESSION_FLAG
+        @variable(model, lc[1:NC])
+        @variable(model, vc[1:NC])
+        @variable(model, mc[1:NC])
+        @constraint(model, lv_eq[i in 1:NC], mc[i] == lc[i] + vc[i])
+
+        @constraint(model, def_l[i in 1:NC], lc[i] == L * x[i])
+        @constraint(model, def_v[i in 1:NC], vc[i] == V * y[i])
+
+        @constraint(model, sum_l, L == sum(lc[i] for i in 1:NC))
+        @constraint(model, sum_v, V == sum(vc[i] for i in 1:NC))
+    else
+        @variable(model, z[1:NC])
+        @variable(model, F)
+        @constraint(model, eq_flow, F == L + V)
+        if USER_FUNCTION_FLAG
+            @constraint(model, eq_cmp[i in 1:NC], comp_flow_eq(L, x[i], V, y[i], F, z[i]) == 0)
+        else
+            @constraint(model, eq_cmp[i in 1:NC], F * z[i] == L * x[i] + V * y[i])
+        end
+    end
+    @constraint(model, sumy, sum(y[i] - x[i] for i in 1:NC) == 0 )
+    @NLobjective(model,Min, sum((ŷ[i] + lnϕV[i] -  β - lnϕL[i] - x̂[i])^2 for i in 1:NC))
+    @constraint(model, def_ZL3, 6 * ZL - 2   <= M_COFF * sL)
+    @constraint(model, def_ZV3, 6 * ZV - 2   >= -M_COFF * sV)
+
+elseif PROBLEM_TYPE == "BUBBLET"
+
+    # @variable(model,sL >= 0)
+    # @variable(model,sV >= 0)
+    # set_start_value(sL, 0)
+    # set_start_value(sV, 0)
+    @constraint(model, def_ZL3, 6 * ZL - 2   <= 0)
+    @constraint(model, def_ZV3, 6 * ZV - 2   >= 0)
+
+    # if LN_EXPRESSION_PHI
+    #     @constraint(model, lower_limit_β, β  >= -sL)
+    #     @constraint(model, upper_limit_β, β  <= sL)
+    # else
+    #     @constraint(model, lower_limit_β, β - 1  >= -sL)
+    #     @constraint(model, upper_limit_β, β - 1  <= sL)
+    # end
+    if LN_EXPRESSION_PHI
+        @constraint(model, complements_temp, Temp * β == 0)
+        @NLobjective(model, Min, 1e6 * (sum(y[i] for i in 1:NC) - 1)^2 + Temp * (β))
+    else
+        # @constraint(model, complements_temp, Temp * (β - 1) == 0)
+        @constraint(model, sumy, sum(y[i] for i in 1:NC) - 1 == 0)
+        @NLobjective(model, Min, Temp * (β - 1))
+        # fix(β, 1)
+        # @NLobjective(model, Min,  1e6 * (sum(y[i] for i in 1:NC) - 1)^2)
     end
 end
+
+
+
+
+
+
+
+
 
 # @NLexpression(model, ζ, sum(lc[i] * (lnϕL[i] + x̂[i]) + vc[i] * (lnϕV[i] + ŷ[i]) for i in 1:NC))
 
 # @NLexpression(model,Δ, ρ * (L * sL + V * sV))
 
-@NLobjective(model,Min, sum((y[i] - x[i])^2 for i in 1:NC) + Δ(L, V, sL, sV, ρ))
+
 

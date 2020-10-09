@@ -7,6 +7,10 @@ function ∇SRK_EOS_a(g, a, Temp, ac_val, mi_val, tc)
     g[2] = -ac_val * mi_val^2 / tc +  ac_val * (1 + mi_val) * sqrt(tc / Temp)
 end
 function SRK_EOS_aij(aij, ai, aj, factor_k)
+    """math
+    a_{ij} = (1 - K_{ij})
+    """
+    # a_ij = (1 - K[i,j]) * ar[i] * ar[j]
     return log((1 - factor_k)) + log(ai) / 2 + log(aj) / 2 - log(aij)
 end
 function ∇SRK_EOS_aij(g, aij, ai, aj, factor_k)
