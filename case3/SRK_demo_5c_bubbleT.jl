@@ -37,7 +37,7 @@ const LN_EXPRESSION_A = false
 const LN_EXPRESSION_PHI = false
 const LC_EXPRESSION_FLAG = false
 const COMPLEMENTS_FLAG = true
-const USER_FUNCTION_FLAG = false
+const USER_FUNCTION_FLAG = true
 const K_MEAN_FLAG = false
 
 const ϵx = log(10e-16)
@@ -55,7 +55,7 @@ model = Model(optimizer_with_attributes(Ipopt.Optimizer))
 include("SRK_Constriant.jl")
 include("initialize.jl")
 
-initialize(PROBLEM_TYPE;z0=z0,F0=F0,pres0=PRES,temp0=56,x0=x0,y0=y0,L0=L0,V0=V0)
+initialize(PROBLEM_TYPE;z0=z0,F0=F0,pres0=420000,temp0=56,x0=x0,y0=y0,L0=L0,V0=V0)
 # initlize_bubleT(x0, PRES)
 # ϕL0 =  (ZL0 - 1) .* bi ./ bmL0 .- log(ZL0 - BL0) .- AL0 ./ BL0 .* (2 .* amiL0 ./ amL0  .- bi ./ bmL0) .* log(1 + BL0 / ZL0)
 # model
@@ -76,3 +76,5 @@ optimize!(model)
 # println.("sL=", value(sL), "    sV=", value(sV), "    β=", value(β))
 # println(value.(ŷ + lnϕV - x̂ - lnϕL))
 # value.([L * x[i] + V * y[i] - TOTAL_FLOW * z_input[NC_SET][i] for i in 1:NC])
+@show SRK_EOS_Z(value.([ZL, AL, BL])...)
+@show SRK_EOS_Z(value.([ZV, AV, BV])...)

@@ -19,8 +19,29 @@ function ∇SRK_EOS_aij(g, aij, ai, aj, factor_k)
     g[3] = 1 / 2 / aj
 end
 
-
-
+function SRK_EOS_ϕ(ϕ, Z, A, B, bm, δ, I1, I3, bi)
+    return log(ϕ) -  (Z - 1) * bi / bm + I1 + A / B * (δ  - bi / bm) * I3
+end
+function ∇SRK_EOS_ϕ(g, ϕ, Z, A, B, bi, bm, δ, I1, I3)
+    # lnϕ
+    g[1] = 1 / ϕ
+    # Z
+    g[2] = - bi / bm
+    # A
+    g[3] = (δ - bi / bm) * I3 / B
+    # B
+    g[4] = -A * (δ  - bi / bm) * I3 / B^2
+    # bm
+    g[5] = ((Z - 1)  + A / B * I3) * bi / bm^2
+    # δ
+    g[6] = A / B * I3
+    # I1
+    g[7] = 1
+    # I3
+    g[8] = A / B * (δ  - bi / bm)
+# bi:parameter
+    g[9] = -(Z - 1) - A / B * I3 / bm
+end
 function SRK_EOS_lnϕ(lnϕ, Z, A, B, bm, δ, I1, I3, bi)
     return lnϕ -  (Z - 1) * bi / bm + I1 + A / B * (δ  - bi / bm) * I3
 end
@@ -63,22 +84,24 @@ function ∇SRK_EOS_dZ(g, Z, A, B)
     g[3] = -2 * B - 1
 end
 
-function SRK_EOS_A(A, am, Temp)
-    return A - am * PRES / R_VAL^2 / Temp^2
+function SRK_EOS_A(A, am, Temp, Pres)
+    return A - am * Pres / R_VAL^2 / Temp^2
 end
-function ∇SRK_EOS_A(g, A, am, Temp)
+function ∇SRK_EOS_A(g, A, am, Temp, Pres)
     g[1] = 1
-    g[2] = -PRES / R_VAL^2 / Temp^2
-    g[3] = 2 * am * PRES / R_VAL^2 / Temp^3
+    g[2] = -Pres / R_VAL^2 / Temp^2
+    g[3] = 2 * am * Pres / R_VAL^2 / Temp^3
+    g[4] = - am / R_VAL^2 / Temp^2
 end
 
-function SRK_EOS_B(B, bm, Temp)
-    return B - bm * PRES / R_VAL / Temp
+function SRK_EOS_B(B, bm, Temp, Pres)
+    return B - bm * Pres / R_VAL / Temp
 end
-function ∇SRK_EOS_B(g, B, bm, Temp)
+function ∇SRK_EOS_B(g, B, bm, Temp, Pres)
     g[1] = 1
-    g[2] = -PRES / R_VAL / Temp
-    g[3] = bm * PRES / R_VAL / Temp^2
+    g[2] = -Pres / R_VAL / Temp
+    g[3] = bm * Pres / R_VAL / Temp^2
+    g[4] = - bm  / R_VAL / Temp
 end
 
 function SRK_EOS_I1(I1, Z, B)
@@ -98,20 +121,21 @@ function ∇SRK_EOS_I3(g, I3, Z, B)
     g[3] = -1 / Z
 end
 
-function forward_lnϕ(z::Array{Float64,1}, pres::Float64, temp::Float64, liq_phase::Bool)::Float64
+function forward_ϕ(z::Array{Float64,1}, pres::Float64, temp::Float64, liq_phase::Bool)::Array{Float64,1}
     # cacluate lnϕ
     # m = M_FACTOR[1] .+ M_FACTOR[2] .* ω .- M_FACTOR[3] .* ω.^2
     # bi  = B_FACTOR * R .* tc ./ pc
     # ac = AC_FACTOR * R^2 .* tc.^2 ./ pc
     ar = sqrt.(AC_VAL) .* (1 .+ MI_VAL .* (1 .- sqrt.(temp ./ TEMP_CRITICAL)))
     aij = (1 .- K) .* (ar * ar')
+    nc = length(z)
     am = sum(z[i] * z[j] * aij[i,j] for i in 1:nc, j in 1:nc)
     bm = sum(z[i] * BI_VAL[i] for i in 1:nc)
-    A = am * pres / R^2 / temp^2
-    B = bm * pres / R / temp
+    A = am * pres / R_VAL^2 / temp^2
+    B = bm * pres / R_VAL / temp
     Z = solve_cube_Z(A, B, liq_phase)
-    atmp = (1 .- k) * (z .* ar)
-    return (Z - 1) .* bi / bm .- log(abs(Z - B)) .- A ./ B .* (2 .* ar ./ am .* atmp .- bi ./ bm) .* log(1 + B / Z)
+    atmp = (1 .- K) * (z .* ar)
+    return exp.((Z - 1) .* BI_VAL ./ bm .- log(abs(Z - B)) .- A ./ B .* (2 .* ar ./ am .* atmp .- BI_VAL ./ bm) .* log(1 + B / Z))
     # ϕ = (Z - 1) .* bi ./ bm .- log(Z - B) .- A ./ B .* (2 .* ami ./ am  .- bi ./ bm) .* log(1 + B / Z)
 end
 
@@ -175,4 +199,12 @@ function solve_cubic_eq(poly::AbstractVector{Complex{T}}) where {T <: AbstractFl
     zeta1 = complex(-0.5, sqrt(T(3.0)) * 0.5)
     zeta2 = conj(zeta1)
     return (third * (s0 + s1 + s2), third * (s0 + s1 * zeta2 + s2 * zeta1), third * (s0 + s1 * zeta1 + s2 * zeta2)), sign(real(Δ))
+end
+
+function forward_bubbleT(x0, pres0)
+    temp0 = initialize_temp(pres0, VAP_PRE)
+    @show(temp0)
+    keq0 = initialize_K(pres0, temp0, PRES_CRITICAL, TEMP_CRITICAL, ω)
+    y0 = x0 .* keq0
+    y0 = y0 ./ sum(y0)
 end

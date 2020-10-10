@@ -132,7 +132,7 @@ end
 function initialize_BUBBLET(pres0, temp0, x0, y0)
 
     temp0 = initialize_temp(pres0, VAP_PRE)
-    @show(temp0)
+    @show(temp0, pres0)
     keq0 = initialize_K(pres0, temp0, PRES_CRITICAL, TEMP_CRITICAL, ω)
     y0 = x0 .* keq0
     y0 = y0 ./ sum(y0)
@@ -211,7 +211,7 @@ function initialize_BUBBLET(pres0, temp0, x0, y0)
         set_start_value.(ϕL, ϕL0)
         set_start_value.(ϕV, ϕV0)
         # det0 =
-        @show sum(y0 .- ϕL0 ./ ϕL0 .* x0)
+        @show y0 .- ϕL0 ./ ϕV0 .* x0
         set_start_value(β, 1)
     end
 

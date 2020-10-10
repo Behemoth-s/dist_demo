@@ -17,8 +17,9 @@ if USER_FUNCTION_FLAG
     register(model, :cube_eos_Z, 3, SRK_EOS_Z, ∇SRK_EOS_Z)
     register(model, :cube_eos_dZ, 3, SRK_EOS_dZ, ∇SRK_EOS_dZ)
     register(model, :cube_eos_lnϕ, 9, SRK_EOS_lnϕ, ∇SRK_EOS_lnϕ)
-    register(model, :cube_eos_A, 3, SRK_EOS_A, ∇SRK_EOS_A)
-    register(model, :cube_eos_B, 3, SRK_EOS_B, ∇SRK_EOS_B)
+    register(model, :cube_eos_ϕ, 9, SRK_EOS_ϕ, ∇SRK_EOS_ϕ)
+    register(model, :cube_eos_A, 4, SRK_EOS_A, ∇SRK_EOS_A)
+    register(model, :cube_eos_B, 4, SRK_EOS_B, ∇SRK_EOS_B)
     register(model, :cube_eos_I1, 3, SRK_EOS_I1, ∇SRK_EOS_I1)
     register(model, :cube_eos_I3, 3, SRK_EOS_I3, ∇SRK_EOS_I3)
     include("FLASH_EO.jl")
@@ -26,7 +27,8 @@ if USER_FUNCTION_FLAG
     register(model, :Δ, 5, Δ, ∇Δ)
 end
 @NLparameter(model, bi_val[i in 1:NC] == BI_VAL[i])
-@variable(model, Temp)
+@variable(model, Temp >= 0)
+@variable(model, Pres >= 0)
 
 @variable(model, x[1:NC])
 @variable(model, y[1:NC])
@@ -78,26 +80,26 @@ end
 @constraint(model, def_bmV, bmV == sum(y[i] * BI_VAL[i] for i in 1:NC))
 @constraint(model, def_bmL, bmL == sum(x[i] * BI_VAL[i] for i in 1:NC))
 
-if LN_EXPRESSION_A
-    @NLconstraint(model, def_AL, log(AL) == log(amL) + log(PRES) - 2 * log(R_VAL) - 2log(Temp))
-    @NLconstraint(model, def_AV, log(AV) == log(amV) + log(PRES) - 2 * log(R_VAL) - 2log(Temp))
-    @NLconstraint(model, def_BV, log(BV) == log(bmV) + log(PRES) - log(R_VAL) - log(Temp))
-    @NLconstraint(model, def_BL, log(BL) == log(bmL) + log(PRES) - log(R_VAL) + log(Temp))
+# if LN_EXPRESSION_A
+#     @NLconstraint(model, def_AL, log(AL) == log(amL) + log(Pres) - 2 * log(R_VAL) - 2log(Temp))
+#     @NLconstraint(model, def_AV, log(AV) == log(amV) + log(Pres) - 2 * log(R_VAL) - 2log(Temp))
+#     @NLconstraint(model, def_BV, log(BV) == log(bmV) + log(Pres) - log(R_VAL) - log(Temp))
+#     @NLconstraint(model, def_BL, log(BL) == log(bmL) + log(Pres) - log(R_VAL) + log(Temp))
+
+# else
+if USER_FUNCTION_FLAG
+    @NLconstraint(model, def_AL, cube_eos_A(AL, amL, Temp, Pres) == 0)
+    @NLconstraint(model, def_AV, cube_eos_A(AV, amV, Temp, Pres) == 0)
+    @NLconstraint(model, def_BL, cube_eos_B(BL, bmL, Temp, Pres) == 0)
+    @NLconstraint(model, def_BV, cube_eos_B(BV, bmV, Temp, Pres) == 0)
 
 else
-    if USER_FUNCTION_FLAG
-        @NLconstraint(model, def_AL, cube_eos_A(AL, amL, Temp) == 0)
-        @NLconstraint(model, def_AV, cube_eos_A(AV, amV, Temp) == 0)
-        @NLconstraint(model, def_BL, cube_eos_B(BL, bmL, Temp) == 0)
-        @NLconstraint(model, def_BV, cube_eos_B(BV, bmV, Temp) == 0)
-
-    else
-        @NLconstraint(model, def_AL, AL == amL * PRES / R_VAL^2 / Temp^2)
-        @NLconstraint(model, def_BL, BL == bmL * PRES / R_VAL / Temp)
-        @NLconstraint(model, def_AV, AV == amV * PRES / R_VAL^2 / Temp^2)
-        @NLconstraint(model, def_BV, BV == bmV * PRES / R_VAL / Temp)
-    end
+    @NLconstraint(model, def_AL, AL == amL * Pres / R_VAL^2 / Temp^2)
+    @NLconstraint(model, def_BL, BL == bmL * Pres / R_VAL / Temp)
+    @NLconstraint(model, def_AV, AV == amV * Pres / R_VAL^2 / Temp^2)
+    @NLconstraint(model, def_BV, BV == bmV * Pres / R_VAL / Temp)
 end
+# end
 
 # 简化lnϕ
 if USER_FUNCTION_FLAG
@@ -133,8 +135,13 @@ if LN_EXPRESSION_PHI
 else
     @variable(model, ϕV[1:NC])
     @variable(model, ϕL[1:NC])
-    @NLconstraint(model, def_phiL[i in 1:NC], log(ϕL[i]) == ((ZL - 1) * BI_VAL[i] / bmL - IL1 - AL / BL * (δL[i]  - bi_val[i] / bmL) * IL3))
-    @NLconstraint(model, def_phiV[i in 1:NC], log(ϕV[i]) == ((ZV - 1) * BI_VAL[i] / bmV - IV1 - AV / BV * (δV[i]  - bi_val[i] / bmV) * IV3))
+    if USER_FUNCTION_FLAG
+        @NLconstraint(model, def_phiL[i in 1:NC], cube_eos_ϕ(ϕL[i], ZL, AL, BL, bmL, δL[i], IL1, IL3, bi_val[i]) == 0)
+        @NLconstraint(model, def_phiV[i in 1:NC], cube_eos_ϕ(ϕV[i], ZV, AV, BV, bmV, δV[i], IV1, IV3, bi_val[i]) == 0)
+    else
+        @NLconstraint(model, def_phiL[i in 1:NC], log(ϕL[i]) == ((ZL - 1) * BI_VAL[i] / bmL - IL1 - AL / BL * (δL[i]  - bi_val[i] / bmL) * IL3))
+        @NLconstraint(model, def_phiV[i in 1:NC], log(ϕV[i]) == ((ZV - 1) * BI_VAL[i] / bmV - IV1 - AV / BV * (δV[i]  - bi_val[i] / bmV) * IV3))
+    end
     @NLconstraint(model, phase_eq[i in 1:NC], y[i] == β * ϕL[i] / ϕV[i] * x[i] )
 
 end
@@ -142,8 +149,8 @@ end
 if USER_FUNCTION_FLAG
     @NLconstraint(model, def_ZL1, cube_eos_Z(ZL, AL, BL) == 0)
     @NLconstraint(model, def_ZV1, cube_eos_Z(ZV, AV, BV) == 0)
-    @NLconstraint(model, def_ZL2, cube_eos_dZ(ZL, AL, BL) >= 0)
-    @NLconstraint(model, def_ZV2, cube_eos_dZ(ZV, AV, BV) >= 0)
+    # @NLconstraint(model, def_ZL2, cube_eos_dZ(ZL, AL, BL) >= 0)
+    # @NLconstraint(model, def_ZV2, cube_eos_dZ(ZV, AV, BV) >= 0)
 
 else
     @NLconstraint(model, def_ZL1, ZL^3 - ZL^2 + (AL - BL^2 - BL) * ZL - AL * BL == 0)
@@ -207,8 +214,8 @@ elseif PROBLEM_TYPE == "BUBBLET"
     # @variable(model,sV >= 0)
     # set_start_value(sL, 0)
     # set_start_value(sV, 0)
-    @constraint(model, def_ZL3, 6 * ZL - 2   <= 0)
-    @constraint(model, def_ZV3, 6 * ZV - 2   >= 0)
+    # @constraint(model, def_ZL3, 6 * ZL - 2   <= 0)
+    # @constraint(model, def_ZV3, 6 * ZV - 2   >= 0)
 
     # if LN_EXPRESSION_PHI
     #     @constraint(model, lower_limit_β, β  >= -sL)
@@ -222,9 +229,26 @@ elseif PROBLEM_TYPE == "BUBBLET"
         @NLobjective(model, Min, 1e6 * (sum(y[i] for i in 1:NC) - 1)^2 + Temp * (β))
     else
         # @constraint(model, complements_temp, Temp * (β - 1) == 0)
-        @constraint(model, sumy, sum(y[i] for i in 1:NC) - 1 == 0)
-        @NLobjective(model, Min, Temp * (β - 1))
-        # fix(β, 1)
+
+        # @variable(model, sy >= 0)
+        # @variable(model, sx >= 0)
+
+        # @constraint(model, defsumy, sum(y[i] for i in 1:NC) - 1 == 0)
+        # @constraint(model, defsumx, sum(y[i] for i in 1:NC) - 1 >= -sx)
+        @NLconstraint(model, sumy, sum(ϕL[i] / ϕV[i] * x[i] for i in 1:NC) - 1 == 0)
+        # @variable(model,sL >= 0)
+        # @constraint(model, lower_limit_β, β - 1  >= -sy)
+        # @constraint(model, upper_limit_β, β - 1  <= sx)
+        # @NLobjective(model, Min, (sum(y[i] for i in 1:NC) - 1)^2)
+        @variable(model, sP >= 0)
+        @constraint(model, sP >= PRES - Pres)
+        @constraint(model, sP >= Pres - PRES )
+        set_lower_bound.(y, 0)
+        set_upper_bound.(y, 1)
+        # set_lower_bound(β, 0.7)
+        set_start_value(Pres, PRES - 1)
+        @NLobjective(model, Min, 1e-3 * sP * Temp)
+        fix(β, 1)
         # @NLobjective(model, Min,  1e6 * (sum(y[i] for i in 1:NC) - 1)^2)
     end
 end
